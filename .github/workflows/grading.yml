@@ -492,14 +492,20 @@ jobs:
         run: |
           MONTHLY_COST=$(jq -r '.totalMonthlyCost // "N/A"' /tmp/infracost.json 2>/dev/null || echo "N/A")
           CHECKOV_FAILED=$(jq '.summary.failed // 0' /tmp/checkov.json 2>/dev/null || echo "N/A")
+          CURRENT_DATE=$(date -u +"%Y-%m-%d %H:%M:%S UTC")
           
-          cat > /tmp/report.md <<'EOFMARKER'
+          # Calculate subtotals
+          CODE_QUALITY_TOTAL=$(( ${{ steps.fmt.outputs.points || 0 }} + ${{ steps.validate.outputs.points || 0 }} + ${{ steps.credentials.outputs.points || 0 }} + ${{ steps.naming.outputs.points || 0 }} + ${{ steps.version-check.outputs.points || 0 }} ))
+          FUNCTIONALITY_TOTAL=$(( ${{ steps.lab-validation.outputs.points || 0 }} + ${{ steps.outputs.outputs.points || 0 }} + ${{ steps.resource-check.outputs.points || 0 }} ))
+          COST_MGMT_TOTAL=$(( ${{ steps.infracost.outputs.points || 0 }} + ${{ steps.cost-check.outputs.points || 0 }} + ${{ steps.teardown-check.outputs.points || 0 }} ))
+          
+          cat > /tmp/report.md <<EOFMARKER
           # 🎓 Lab Grading Report
           
           **Student:** @${{ github.event.pull_request.user.login }}  
           **Lab:** Week ${{ steps.lab-info.outputs.week }}, Lab ${{ steps.lab-info.outputs.lab }}  
           **Submitted:** ${{ github.event.pull_request.created_at }}  
-          **Graded:** $(date -u +"%Y-%m-%d %H:%M:%S UTC")
+          **Graded:** ${CURRENT_DATE}
           
           ---
           
@@ -516,14 +522,14 @@ jobs:
           - **Naming Conventions** (${{ steps.naming.outputs.points || 0 }}/5): ${{ steps.naming.outputs.status == 'pass' && '✅ Passed' || steps.naming.outputs.status == 'partial' && '⚠️ Partial' || '❌ Failed' }}
           - **Terraform Version Requirement** (${{ steps.version-check.outputs.points || 0 }}/5): ${{ steps.version-check.outputs.status == 'pass' && '✅ Passed' || '❌ Missing version requirement' }}
           
-          **Subtotal:** $(( ${{ steps.fmt.outputs.points || 0 }} + ${{ steps.validate.outputs.points || 0 }} + ${{ steps.credentials.outputs.points || 0 }} + ${{ steps.naming.outputs.points || 0 }} + ${{ steps.version-check.outputs.points || 0 }} ))/25
+          **Subtotal:** ${CODE_QUALITY_TOTAL}/25
           
           ### Functionality (30 points)
           - **Lab-Specific Requirements** (${{ steps.lab-validation.outputs.points || 0 }}/20): ${{ steps.lab-validation.outputs.status == 'pass' && '✅ Passed' || steps.lab-validation.outputs.status == 'skip' && '⚠️ No validator found' || '❌ Failed' }}
           - **Outputs Defined** (${{ steps.outputs.outputs.points || 0 }}/5): ${{ steps.outputs.outputs.status == 'pass' && '✅ Passed' || '❌ Missing or empty outputs.tf' }}
           - **Resources in Plan** (${{ steps.resource-check.outputs.points || 0 }}/5): ${{ steps.resource-check.outputs.status == 'pass' && '✅ Passed' || '❌ No resources to create' }}
           
-          **Subtotal:** $(( ${{ steps.lab-validation.outputs.points || 0 }} + ${{ steps.outputs.outputs.points || 0 }} + ${{ steps.resource-check.outputs.points || 0 }} ))/30
+          **Subtotal:** ${FUNCTIONALITY_TOTAL}/30
           
           ### Cost Management (20 points)
           - **Infracost Analysis** (${{ steps.infracost.outputs.points || 0 }}/5): ${{ steps.infracost.outputs.status == 'pass' && '✅ Passed' || '❌ Failed' }}
@@ -531,7 +537,7 @@ jobs:
             - Estimated Cost: \$${MONTHLY_COST}/month
           - **AutoTeardown Tag** (${{ steps.teardown-check.outputs.points || 0 }}/5): ${{ steps.teardown-check.outputs.status == 'pass' && '✅ Passed' || '❌ Missing AutoTeardown tag' }}
           
-          **Subtotal:** $(( ${{ steps.infracost.outputs.points || 0 }} + ${{ steps.cost-check.outputs.points || 0 }} + ${{ steps.teardown-check.outputs.points || 0 }} ))/20
+          **Subtotal:** ${COST_MGMT_TOTAL}/20
           
           ### Security (15 points)
           - **Checkov Security Scan** (${{ steps.checkov.outputs.points || 0 }}/15): ${{ steps.checkov.outputs.points == 15 && '✅ No issues found' || steps.checkov.outputs.points >= 10 && '⚠️ Minor issues (≤3 failed checks)' || steps.checkov.outputs.points >= 5 && '⚠️ Several issues (≤5 failed checks)' || '❌ Many security issues' }}

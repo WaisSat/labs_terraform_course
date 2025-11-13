@@ -34,38 +34,11 @@ The automated grading system needs access to your AWS account and Infracost. You
 
 **Choose your preferred method:**
 
-#### Method A: Using GitHub CLI (Recommended - Fast & Secure)
+#### Method A: Using GitHub Web Interface (Recommended - Most Reliable)
 
-The GitHub CLI provides the fastest and most secure way to set up secrets.
-
-**Complete guide**: See [GITHUB_CLI_SETUP.md](GITHUB_CLI_SETUP.md)
+The web interface works in all environments, including GitHub Codespaces.
 
 **Quick version**:
-```bash
-# Install GitHub CLI (if not already installed)
-brew install gh                    # macOS
-sudo apt install gh               # Ubuntu/Debian
-winget install GitHub.cli         # Windows
-
-# Authenticate
-gh auth login
-
-# Navigate to your fork
-cd labs_terraform_course
-
-# Run the automated setup script
-./scripts/setup-secrets.sh
-
-# Or set secrets manually
-gh secret set AWS_ACCESS_KEY_ID
-gh secret set AWS_SECRET_ACCESS_KEY
-gh secret set INFRACOST_API_KEY
-
-# Verify
-gh secret list
-```
-
-#### Method B: Using GitHub Web Interface (Alternative)
 
 ##### 3.1 Get Your AWS Credentials
 
@@ -92,17 +65,64 @@ gh secret list
 ##### 3.3 Add Secrets via Web Interface
 
 1. Go to your fork: `https://github.com/YOUR-USERNAME/labs_terraform_course`
-2. Click **Settings** → **Secrets and variables** → **Actions**
-3. Click **New repository secret**
-4. Add three secrets:
+2. Click **Settings** (in the top navigation bar of YOUR fork)
+3. In the left sidebar, expand **Secrets and variables** → Click **Actions**
+4. Click **New repository secret** button (green button on the right)
+5. Add three secrets one at a time:
+   
+   **Secret 1:**
    - **Name**: `AWS_ACCESS_KEY_ID`  
-     **Value**: Your AWS access key ID
+   - **Value**: Your AWS access key ID
+   - Click **Add secret**
+   
+   **Secret 2:**
    - **Name**: `AWS_SECRET_ACCESS_KEY`  
-     **Value**: Your AWS secret access key
+   - **Value**: Your AWS secret access key
+   - Click **Add secret**
+   
+   **Secret 3:**
    - **Name**: `INFRACOST_API_KEY`  
-     **Value**: Your Infracost API key
+   - **Value**: Your Infracost API key
+   - Click **Add secret**
+
+6. Verify all three secrets are listed (you won't see the values, just the names)
 
 ⚠️ **IMPORTANT**: Never commit these credentials to your code!
+
+#### Method B: Using GitHub CLI (Alternative - For Local Development)
+
+The GitHub CLI can be faster but requires proper authentication scopes. This may not work in GitHub Codespaces due to token limitations.
+
+**Complete guide**: See [GITHUB_CLI_SETUP.md](GITHUB_CLI_SETUP.md)
+
+**Quick version**:
+
+```bash
+# Install gh CLI (if not already installed)
+# macOS: brew install gh
+# Linux/Windows: See https://cli.github.com
+
+# Login to GitHub with workflow scope
+gh auth login --scopes repo,workflow
+
+# Navigate to your fork
+cd labs_terraform_course
+
+# Run the automated setup script
+./scripts/setup-secrets.sh
+
+# Or set secrets manually
+gh secret set AWS_ACCESS_KEY_ID -R YOUR-USERNAME/labs_terraform_course
+gh secret set AWS_SECRET_ACCESS_KEY -R YOUR-USERNAME/labs_terraform_course
+gh secret set INFRACOST_API_KEY -R YOUR-USERNAME/labs_terraform_course
+
+# Verify
+gh secret list -R YOUR-USERNAME/labs_terraform_course
+```
+
+**Troubleshooting:**
+- **"HTTP 403: Resource not accessible"** - Use Method A (Web Interface) instead. Codespaces tokens don't have `workflow` scope.
+- **"Multiple remotes detected"** - Use the `-R` flag with your repo: `gh secret set SECRET_NAME -R YOUR-USERNAME/labs_terraform_course`
 
 ### Step 4: Configure AWS CLI Locally
 

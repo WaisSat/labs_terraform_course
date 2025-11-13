@@ -360,6 +360,49 @@ resource "aws_s3_bucket" "test_bucket" {
 - Each tag is specified as `key = "value"`
 - Tags are metadata - they don't affect functionality but help with organization
 
+**💡 Pro Tip: Use Variables for Easier Configuration**
+
+Instead of manually replacing `YOUR-GITHUB-USERNAME` everywhere, you can use Terraform variables. Create a file called `variables.tf`:
+
+```hcl
+variable "student_name" {
+  description = "Your GitHub username"
+  type        = string
+  default     = "YOUR-GITHUB-USERNAME"  # Replace this once
+}
+```
+
+Then create `terraform.tfvars` to set the value:
+
+```hcl
+student_name = "your-actual-github-username"
+```
+
+Update your `main.tf` to use the variable:
+
+```hcl
+resource "aws_s3_bucket" "test_bucket" {
+  bucket = "terraform-lab-00-${var.student_name}"  # Uses variable
+
+  tags = {
+    Name         = "Lab 0 Test Bucket"
+    Environment  = "Learning"
+    ManagedBy    = "Terraform"
+    Student      = var.student_name  # Uses variable
+    AutoTeardown = "8h"
+  }
+}
+```
+
+**Benefits:**
+- Change your username in ONE place (`terraform.tfvars`)
+- Reuse across all resources
+- Easier to maintain
+
+**Important:** Make sure `.gitignore` includes `*.tfvars` so you don't commit it!
+
+**For this lab, using variables is OPTIONAL** - you can hardcode your username if you prefer.
+
 **Test your changes:**
 ```bash
 terraform fmt
@@ -689,33 +732,47 @@ Right now, your infrastructure state is stored in a local file: `terraform.tfsta
 
 First, create a dedicated S3 bucket to store your Terraform state files. This bucket will be used for ALL your labs.
 
-**Get your AWS account ID:**
+**💡 Pro Tip: Use a variable to make this easier:**
+
 ```bash
-aws sts get-caller-identity --query Account --output text
+# Get your AWS account ID and save it to a variable
+export AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+
+# Verify it was set
+echo $AWS_ACCOUNT_ID
+# Should output something like: 123456789012
 ```
 
 **Create the state bucket:**
 ```bash
-# Replace YOUR-ACCOUNT-ID with the account ID from above
-aws s3 mb s3://terraform-state-YOUR-ACCOUNT-ID --region us-east-1
+# Using the variable (recommended)
+aws s3 mb s3://terraform-state-$AWS_ACCOUNT_ID --region us-east-1
+
+# Or manually replace YOUR-ACCOUNT-ID:
+# aws s3 mb s3://terraform-state-YOUR-ACCOUNT-ID --region us-east-1
 ```
 
-**Example:**
+**Example output:**
 ```bash
-aws s3 mb s3://terraform-state-123456789012 --region us-east-1
+make_bucket: terraform-state-123456789012
 ```
 
 **Enable versioning (protects against accidental deletions):**
 ```bash
+# Using the variable
 aws s3api put-bucket-versioning \
-  --bucket terraform-state-YOUR-ACCOUNT-ID \
+  --bucket terraform-state-$AWS_ACCOUNT_ID \
   --versioning-configuration Status=Enabled
+
+# Or manually:
+# aws s3api put-bucket-versioning --bucket terraform-state-YOUR-ACCOUNT-ID --versioning-configuration Status=Enabled
 ```
 
 **Enable encryption:**
 ```bash
+# Using the variable
 aws s3api put-bucket-encryption \
-  --bucket terraform-state-YOUR-ACCOUNT-ID \
+  --bucket terraform-state-$AWS_ACCOUNT_ID \
   --server-side-encryption-configuration '{
     "Rules": [{
       "ApplyServerSideEncryptionByDefault": {
@@ -723,11 +780,16 @@ aws s3api put-bucket-encryption \
       }
     }]
   }'
+
+# Or manually replace YOUR-ACCOUNT-ID in the bucket name above
 ```
 
 **Verify the bucket was created:**
 ```bash
 aws s3 ls | grep terraform-state
+
+# Should show something like:
+# 2025-11-13 12:34:56 terraform-state-123456789012
 ```
 
 #### Step 2: Configure Backend in Your Lab
@@ -740,7 +802,7 @@ Now tell Terraform to use this bucket for state storage.
 # Backend configuration for remote state storage
 terraform {
   backend "s3" {
-    bucket         = "terraform-state-YOUR-ACCOUNT-ID"  # Replace with your bucket name
+    bucket         = "terraform-state-YOUR-ACCOUNT-ID"  # Replace with your actual account ID
     key            = "week-00/lab-00/terraform.tfstate"
     region         = "us-east-1"
     encrypt        = true
@@ -756,7 +818,29 @@ terraform {
 - `encrypt` - Encrypts state at rest
 - `use_lockfile` - Uses S3's native locking to prevent concurrent modifications
 
-**Important:** Replace `YOUR-ACCOUNT-ID` with your actual AWS account ID!
+**💡 Quick way to get your bucket name:**
+```bash
+# If you still have the variable set from Step 1:
+echo "terraform-state-$AWS_ACCOUNT_ID"
+
+# Or get it fresh:
+echo "terraform-state-$(aws sts get-caller-identity --query Account --output text)"
+```
+
+Copy the output and paste it as your `bucket` value in `backend.tf`.
+
+**Example `backend.tf` with real account ID:**
+```hcl
+terraform {
+  backend "s3" {
+    bucket         = "terraform-state-123456789012"
+    key            = "week-00/lab-00/terraform.tfstate"
+    region         = "us-east-1"
+    encrypt        = true
+    use_lockfile   = true
+  }
+}
+```
 
 #### Step 3: Migrate State to S3
 
@@ -910,16 +994,57 @@ terraform init -migrate-state
 
 #### 6.1 Set Up GitHub Secrets (First Time Only)
 
-Before creating your first PR, you need to configure GitHub Actions secrets in **your fork**:
+Before creating your first PR, you need to configure GitHub Actions secrets in **your fork**. These secrets allow the automated grading workflows to run.
+
+**Method 1: Using GitHub Web UI (Recommended)**
 
 1. Go to your fork: `https://github.com/YOUR-USERNAME/labs_terraform_course`
-2. Navigate to **Settings** → **Secrets and variables** → **Actions**
-3. Add three secrets:
-   - `AWS_ACCESS_KEY_ID` - Your AWS access key
-   - `AWS_SECRET_ACCESS_KEY` - Your AWS secret key  
-   - `INFRACOST_API_KEY` - Your Infracost API key (get via `infracost configure get api_key`)
+2. Click **Settings** (top navigation bar)
+3. In the left sidebar, expand **Secrets and variables** → Click **Actions**
+4. Click **New repository secret** button
+5. Add each of the following secrets:
 
-⚠️ **Security Note**: These secrets are only accessible to workflows in YOUR fork, not the main repo.
+   **Secret 1: AWS_ACCESS_KEY_ID**
+   - Name: `AWS_ACCESS_KEY_ID`
+   - Value: Your AWS access key (from `aws configure` setup)
+   
+   **Secret 2: AWS_SECRET_ACCESS_KEY**
+   - Name: `AWS_SECRET_ACCESS_KEY`
+   - Value: Your AWS secret access key
+   
+   **Secret 3: INFRACOST_API_KEY**
+   - Name: `INFRACOST_API_KEY`
+   - Value: Get it by running: `infracost configure get api_key`
+
+**Method 2: Using GitHub CLI (Alternative)**
+
+If you prefer command line and have `gh` CLI installed with proper permissions:
+
+```bash
+# Make sure you're authenticated with workflow scope
+gh auth login --scopes repo,workflow
+
+# Set secrets
+gh secret set AWS_ACCESS_KEY_ID -R YOUR-USERNAME/labs_terraform_course
+# (Paste your AWS access key when prompted)
+
+gh secret set AWS_SECRET_ACCESS_KEY -R YOUR-USERNAME/labs_terraform_course
+# (Paste your AWS secret key when prompted)
+
+gh secret set INFRACOST_API_KEY -R YOUR-USERNAME/labs_terraform_course
+# (Paste your Infracost API key when prompted)
+```
+
+**Common Issues:**
+
+- **"HTTP 403: Resource not accessible"** - Use the web UI method instead. Codespaces tokens don't have `workflow` scope.
+- **"Multiple remotes detected"** - Use the `-R` flag: `gh secret set SECRET_NAME -R YOUR-USERNAME/labs_terraform_course`
+- **Can't find Settings** - Make sure you're on YOUR fork, not the original repo
+
+⚠️ **Security Notes**: 
+- These secrets are only accessible to workflows in YOUR fork
+- Never commit credentials to Git
+- Secrets are encrypted and not visible after creation
 
 See [STUDENT_SETUP.md](../../STUDENT_SETUP.md) for detailed instructions.
 
@@ -951,16 +1076,42 @@ git push origin week-00-lab-00
 
 #### 6.3 Create Pull Request in Your Fork
 
-**IMPORTANT**: Create the PR within YOUR fork, not to the main repository!
+**CRITICAL**: Create the PR within YOUR fork, not to the main repository! PRs to the main repo won't have access to your secrets.
 
-1. Go to **your fork** on GitHub
+**Method 1: Using GitHub CLI (Recommended)**
+
+```bash
+# Create PR in YOUR fork (base and head both in your fork)
+gh pr create --repo YOUR-USERNAME/labs_terraform_course \
+  --base main \
+  --head week-00-lab-00 \
+  --title "Week 0 Lab 0 - Your Name" \
+  --body "Completing Lab 0: S3 bucket setup with remote state"
+
+# Example:
+# gh pr create --repo jsmith/labs_terraform_course --base main --head week-00-lab-00 --title "Week 0 Lab 0 - John Smith" --body "Lab 0 submission"
+```
+
+**Method 2: Using GitHub Web UI**
+
+1. Go to **your fork**: `https://github.com/YOUR-USERNAME/labs_terraform_course`
 2. Click **Pull requests** → **New pull request**
-3. Set both base and compare to YOUR fork:
-   - Base: `YOUR-USERNAME/labs_terraform_course` base: `main`
-   - Compare: `YOUR-USERNAME/labs_terraform_course` compare: `week-00-lab-00`
+3. **Important**: Click "compare across forks" if needed, then set:
+   - Base repository: `YOUR-USERNAME/labs_terraform_course` base: `main`
+   - Head repository: `YOUR-USERNAME/labs_terraform_course` compare: `week-00-lab-00`
 4. Title: `Week 0 Lab 0 - [Your Name]`
 5. Fill out the PR template
-6. Create pull request
+6. Click **Create pull request**
+
+**Verify Your PR is Correct:**
+- The PR URL should be: `https://github.com/YOUR-USERNAME/labs_terraform_course/pull/X`
+- NOT: `https://github.com/shart-cloud/labs_terraform_course/pull/X`
+- Both base and head should show YOUR username
+
+**Why this matters:**
+- PRs within your fork can access the secrets you configured
+- PRs to the main repo cannot access secrets (security feature)
+- The grading workflow needs AWS credentials from your secrets
 
 #### 6.4 Wait for Automated Grading
 
