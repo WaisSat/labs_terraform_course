@@ -19,6 +19,8 @@ Your `student-work/` directory must contain:
 
 - [ ] `main.tf` with properly configured S3 bucket resource
 - [ ] `outputs.tf` with bucket name and ARN outputs
+- [ ] `backend.tf` with S3 remote state configuration
+- [ ] `.gitignore` that prevents committing state files
 - [ ] All code passes `terraform fmt -check`
 - [ ] All code passes `terraform validate`
 - [ ] S3 bucket name includes your student ID or GitHub username
@@ -33,7 +35,12 @@ Your `student-work/` directory must contain:
 
 - [ ] S3 bucket successfully created in AWS
 - [ ] Bucket versioning is enabled
+- [ ] Bucket encryption is enabled
+- [ ] State storage bucket created in S3 (`terraform-state-YOUR-ACCOUNT-ID`)
+- [ ] State successfully migrated to S3 (no local `terraform.tfstate` committed)
+- [ ] Backend configuration includes `use_lockfile = true`
 - [ ] No hardcoded credentials in code
+- [ ] No state files or `.terraform/` directory in Git
 - [ ] Estimated monthly cost is under $5
 
 ### 4. Pull Request
@@ -58,36 +65,46 @@ Answer these questions in your PR description:
 
 1. What is the estimated monthly cost of your S3 bucket (from Infracost)?
 2. What AWS region did you deploy to and why?
-3. What budget limit did you set in your Terraform billing configuration?
-4. Did you encounter any issues during setup? How did you resolve them?
-5. How long did it take to complete this lab?
+3. What is the name of your state storage bucket?
+4. What budget limit did you set in your Terraform billing configuration?
+5. Why is remote state important for infrastructure management?
+6. Did you encounter any issues during setup? How did you resolve them?
+7. How long did it take to complete this lab?
 
 ## Grading Rubric (100 points)
 
-### Code Quality (25 points)
-- Terraform fmt passes (5 pts)
-- Terraform validate passes (5 pts)
-- No hardcoded credentials (5 pts)
-- Proper naming conventions (5 pts)
-- All required tags present (5 pts)
+### Code Quality (20 points)
+- Terraform fmt passes (4 pts)
+- Terraform validate passes (4 pts)
+- No hardcoded credentials (4 pts)
+- Proper naming conventions (4 pts)
+- All required tags present (4 pts)
 
 ### Functionality (30 points)
-- S3 bucket successfully deployed (15 pts)
-- Versioning enabled (10 pts)
+- S3 bucket successfully deployed (10 pts)
+- Versioning enabled (5 pts)
+- Encryption enabled (5 pts)
 - Outputs defined correctly (5 pts)
+- Backend configured correctly (5 pts)
+
+### State Management (15 points)
+- Remote state bucket created (5 pts)
+- State migrated to S3 successfully (5 pts)
+- No state files committed to Git (3 pts)
+- `.gitignore` properly configured (2 pts)
 
 ### Cost Management (20 points)
 - Billing budget deployed via Terraform (10 pts)
 - SNS subscription confirmed (5 pts)
 - Infracost report generated (5 pts)
 
-### Documentation (15 points)
-- Screenshots provided (10 pts)
+### Documentation (10 points)
+- Screenshots provided (5 pts)
 - Questions answered (5 pts)
 
-### Submission Format (10 points)
-- PR properly formatted (5 pts)
-- All checklist items completed (5 pts)
+### Submission Format (5 points)
+- PR properly formatted (3 pts)
+- All checklist items completed (2 pts)
 
 ## Submission Instructions
 

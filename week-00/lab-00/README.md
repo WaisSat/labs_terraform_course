@@ -6,7 +6,7 @@ Set up your development environment, configure AWS credentials, install required
 
 ## Estimated Time
 
-3-4 hours
+3.5-4.5 hours
 
 ## Prerequisites
 
@@ -663,9 +663,240 @@ terraform output
 cat terraform.tfstate | jq '.resources'  # Requires jq installed
 ```
 
+### Part 5.5: Set Up Remote State Storage (30 minutes)
+
+**CRITICAL**: Before you submit your work via Git, you need to migrate your state file to remote storage. If you commit and push with only a local state file, you won't be able to manage your infrastructure later!
+
+#### Why Remote State Matters
+
+Right now, your infrastructure state is stored in a local file: `terraform.tfstate`
+
+**Problems with local state:**
+- ❌ If you lose the file, Terraform "forgets" what it created
+- ❌ Can't manage resources from multiple computers
+- ❌ Can't collaborate with team members
+- ❌ Easy to accidentally commit sensitive data to Git
+- ❌ After you push to GitHub, you can't easily destroy resources from another location
+
+**Solution: Remote state in S3**
+- ✅ State stored in AWS S3 bucket
+- ✅ Accessible from anywhere with AWS credentials
+- ✅ Encrypted and versioned
+- ✅ Native locking prevents conflicts (Terraform 1.9+)
+- ✅ Never committed to Git
+
+#### Step 1: Create a State Bucket
+
+First, create a dedicated S3 bucket to store your Terraform state files. This bucket will be used for ALL your labs.
+
+**Get your AWS account ID:**
+```bash
+aws sts get-caller-identity --query Account --output text
+```
+
+**Create the state bucket:**
+```bash
+# Replace YOUR-ACCOUNT-ID with the account ID from above
+aws s3 mb s3://terraform-state-YOUR-ACCOUNT-ID --region us-east-1
+```
+
+**Example:**
+```bash
+aws s3 mb s3://terraform-state-123456789012 --region us-east-1
+```
+
+**Enable versioning (protects against accidental deletions):**
+```bash
+aws s3api put-bucket-versioning \
+  --bucket terraform-state-YOUR-ACCOUNT-ID \
+  --versioning-configuration Status=Enabled
+```
+
+**Enable encryption:**
+```bash
+aws s3api put-bucket-encryption \
+  --bucket terraform-state-YOUR-ACCOUNT-ID \
+  --server-side-encryption-configuration '{
+    "Rules": [{
+      "ApplyServerSideEncryptionByDefault": {
+        "SSEAlgorithm": "AES256"
+      }
+    }]
+  }'
+```
+
+**Verify the bucket was created:**
+```bash
+aws s3 ls | grep terraform-state
+```
+
+#### Step 2: Configure Backend in Your Lab
+
+Now tell Terraform to use this bucket for state storage.
+
+**Create a new file** `backend.tf` in `week-00/lab-00/student-work/`:
+
+```hcl
+# Backend configuration for remote state storage
+terraform {
+  backend "s3" {
+    bucket         = "terraform-state-YOUR-ACCOUNT-ID"  # Replace with your bucket name
+    key            = "week-00/lab-00/terraform.tfstate"
+    region         = "us-east-1"
+    encrypt        = true
+    use_lockfile   = true  # Native S3 locking (Terraform 1.9+)
+  }
+}
+```
+
+**Understanding the backend block:**
+- `bucket` - The S3 bucket you just created
+- `key` - Path within the bucket (organizes state files by lab)
+- `region` - AWS region where the bucket exists
+- `encrypt` - Encrypts state at rest
+- `use_lockfile` - Uses S3's native locking to prevent concurrent modifications
+
+**Important:** Replace `YOUR-ACCOUNT-ID` with your actual AWS account ID!
+
+#### Step 3: Migrate State to S3
+
+Now migrate your existing local state to S3:
+
+```bash
+# Re-initialize Terraform with the new backend
+terraform init -migrate-state
+```
+
+**What happens:**
+1. Terraform detects you changed from local to S3 backend
+2. It asks: "Do you want to copy existing state to the new backend?"
+3. Type `yes`
+4. Your local state is uploaded to S3
+5. Terraform now uses S3 for all operations
+
+**Verify the migration:**
+```bash
+# Check that state is in S3
+aws s3 ls s3://terraform-state-YOUR-ACCOUNT-ID/week-00/lab-00/
+
+# Should show: terraform.tfstate
+```
+
+**Test it works:**
+```bash
+terraform plan
+```
+
+Should show "No changes" - Terraform successfully read state from S3!
+
+#### Step 4: Clean Up Local State (Optional)
+
+After successful migration, you can remove the local state files:
+
+```bash
+# These are no longer needed
+rm terraform.tfstate
+rm terraform.tfstate.backup  # If it exists
+```
+
+**Important:** Do this ONLY after confirming state is in S3!
+
+#### Step 5: Update .gitignore
+
+Make sure your `.gitignore` prevents accidentally committing state files.
+
+Check if there's a `.gitignore` in your lab directory:
+```bash
+ls -la week-00/lab-00/student-work/.gitignore
+```
+
+If it doesn't exist, create one:
+```bash
+cat > week-00/lab-00/student-work/.gitignore << 'EOF'
+# Terraform files
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+.terraform.lock.hcl
+
+# Sensitive files
+terraform.rc
+.terraformrc
+EOF
+```
+
+**Verify state files won't be committed:**
+```bash
+cd week-00/lab-00/student-work
+git status
+```
+
+You should NOT see `terraform.tfstate` in the list of files to be committed.
+
+#### Understanding What You Committed
+
+After setting up remote state, your Git repository will contain:
+- ✅ `main.tf` - Your infrastructure code
+- ✅ `outputs.tf` - Output definitions
+- ✅ `backend.tf` - Backend configuration (no secrets)
+- ✅ `.gitignore` - Protects sensitive files
+- ❌ `terraform.tfstate` - NOT committed (in S3)
+- ❌ `.terraform/` - NOT committed (provider plugins)
+
+**This is the correct setup!** Code is in Git, state is in S3.
+
+#### Test Remote State Works
+
+To prove remote state works, try this:
+
+```bash
+# See your current directory
+pwd
+
+# Move to home directory
+cd ~
+
+# Try to run Terraform from a different location
+cd ~/git/shart-cloud-gh/terraform-course/week-00/lab-00/student-work
+terraform init
+terraform plan
+```
+
+It should work because state is in S3, not tied to your local directory!
+
+#### Troubleshooting Remote State
+
+**"Error: Failed to get existing workspaces"**
+- Double-check your bucket name in `backend.tf`
+- Verify the bucket exists: `aws s3 ls | grep terraform-state`
+- Check AWS credentials: `aws sts get-caller-identity`
+
+**"Error: Error loading state: AccessDenied"**
+- Your IAM user needs S3 permissions
+- Verify: `aws s3 ls s3://terraform-state-YOUR-ACCOUNT-ID`
+
+**"Backend initialization required"**
+- Run `terraform init` whenever you change backend configuration
+- Use `-migrate-state` flag to move existing state
+
+**Want to move back to local state?**
+```bash
+# Remove or comment out the backend block in backend.tf
+# Then run:
+terraform init -migrate-state
+```
+
 ### Part 6: Submit Your Work (20 minutes)
 
-**Before submitting:** Make sure you've completed all steps in Part 5 and have:
+**Before submitting:** Make sure you've completed all steps in Part 5 AND Part 5.5:
+- ✅ A working `main.tf` with bucket, versioning, and encryption
+- ✅ An `outputs.tf` with bucket name and ARN outputs
+- ✅ A `backend.tf` with S3 remote state configured
+- ✅ Created state bucket in S3
+- ✅ Migrated state to S3 (`terraform init -migrate-state`)
+- ✅ Verified state is in S3 (not local)
+- ✅ `.gitignore` prevents committing state files
 - ✅ A working `main.tf` with bucket, versioning, and encryption
 - ✅ An `outputs.tf` with bucket name and ARN outputs
 - ✅ Run `terraform fmt` to format your code
@@ -673,6 +904,9 @@ cat terraform.tfstate | jq '.resources'  # Requires jq installed
 - ✅ Successfully applied your configuration (`terraform apply`)
 - ✅ Verified the bucket exists in AWS Console
 - ✅ Run `infracost breakdown --path .` and reviewed costs
+- ✅ Created a state storage bucket in S3
+- ✅ Configured remote backend in `backend.tf`
+- ✅ Migrated state to S3 successfully
 
 #### 6.1 Set Up GitHub Secrets (First Time Only)
 
@@ -695,8 +929,18 @@ See [STUDENT_SETUP.md](../../STUDENT_SETUP.md) for detailed instructions.
 # Create a branch (recommended)
 git checkout -b week-00-lab-00
 
-# Add your files
+# Add your files (main.tf, outputs.tf, backend.tf, .gitignore)
 git add week-00/lab-00/student-work/
+
+# Verify state files are NOT being committed
+git status
+
+# You should see:
+#   main.tf
+#   outputs.tf
+#   backend.tf
+#   .gitignore
+# You should NOT see terraform.tfstate or .terraform/
 
 # Commit
 git commit -m "Week 0 Lab 0 - Your Name"
@@ -747,25 +991,58 @@ The grading workflow will automatically run and:
 
 ### Part 7: Cleanup (10 minutes)
 
-After your PR is reviewed:
+After your PR is reviewed and graded:
 
 #### 7.1 Destroy S3 Infrastructure
 
+Because you set up remote state, you can destroy your resources from any location:
+
 ```bash
 cd week-00/lab-00/student-work
+
+# Initialize (pulls state from S3)
+terraform init
+
+# Destroy resources
 terraform destroy
 ```
 
 Type `yes` to confirm.
 
-Alternatively, wait 8 hours for the auto-teardown action to destroy resources automatically.
+**Benefits of remote state:**
+- You can run this from any computer (as long as you have AWS credentials)
+- Even if you cloned your repo to a new machine, Terraform knows what resources exist
+- The state in S3 tracks everything you created
 
-#### 7.2 Keep or Remove Billing Budget
+**Alternative:** Wait 8 hours for the auto-teardown GitHub Action to destroy resources automatically (based on the `AutoTeardown = "8h"` tag).
+
+#### 7.2 (Optional) Clean Up State Bucket
+
+**Important**: Keep your state bucket active if you have more labs to complete!
+
+The state bucket you created (`terraform-state-YOUR-ACCOUNT-ID`) will be used for ALL labs in this course. Only remove it at the end of the semester:
+
+```bash
+# ONLY do this after completing ALL labs and destroying ALL infrastructure
+
+# First, verify all state files are for destroyed resources
+aws s3 ls s3://terraform-state-YOUR-ACCOUNT-ID/ --recursive
+
+# Delete all state files
+aws s3 rm s3://terraform-state-YOUR-ACCOUNT-ID/ --recursive
+
+# Delete the bucket
+aws s3 rb s3://terraform-state-YOUR-ACCOUNT-ID
+```
+
+**Cost:** S3 storage for state files costs less than $0.01/month, so keeping it is fine.
+
+#### 7.3 Keep or Remove Billing Budget
 
 **Important**: The billing budget should typically be kept active throughout the course to monitor costs. However, if you need to remove it:
 
 ```bash
-cd common/billing-setup
+cd ../../common/billing-setup
 terraform destroy
 ```
 
@@ -830,15 +1107,50 @@ See [SUBMISSION.md](SUBMISSION.md) for the complete checklist.
 - If using Infracost for the first time, sign up at https://www.infracost.io/
 
 ### State File Issues
+
 **"Error: state snapshot was created by Terraform vX.Y.Z"**
 - Your Terraform version is older than what created the state file
 - Upgrade Terraform: `brew upgrade terraform` (macOS) or reinstall
 - Never downgrade Terraform after creating state
 
 **"Error: acquiring state lock"**
-- Another Terraform process is running
+- Another Terraform process is running (maybe in another terminal?)
 - Wait for it to finish or find and kill the process
+- Check for stale lock files in S3: `aws s3 ls s3://terraform-state-YOUR-ACCOUNT-ID/week-00/lab-00/`
 - Last resort: `terraform force-unlock LOCK_ID` (use carefully!)
+
+**"Error: Failed to get existing workspaces: NoSuchBucket"**
+- The state bucket doesn't exist
+- Check bucket name in `backend.tf` matches what you created
+- Verify bucket exists: `aws s3 ls | grep terraform-state`
+- Recreate bucket if needed: `aws s3 mb s3://terraform-state-YOUR-ACCOUNT-ID`
+
+**"Error: Backend initialization required, please run 'terraform init'"**
+- You changed backend configuration
+- Run `terraform init` to reconfigure
+- Use `-migrate-state` if moving from local to S3 or vice versa
+
+**"Error: Error loading state: AccessDenied"**
+- Your IAM user can't access the state bucket
+- Verify: `aws s3 ls s3://terraform-state-YOUR-ACCOUNT-ID/`
+- Your IAM user needs S3 read/write permissions
+
+**Accidentally committed state to Git?**
+```bash
+# Remove from Git history (before pushing!)
+git rm --cached terraform.tfstate
+git rm --cached terraform.tfstate.backup
+
+# Make sure .gitignore is set up
+echo "*.tfstate*" >> .gitignore
+git add .gitignore
+git commit -m "Remove state files and update .gitignore"
+```
+
+**Lost your state file completely?**
+- If it's in S3: Just run `terraform init` to download it
+- If you deleted the S3 bucket: You'll need to import resources manually or recreate them
+- This is why remote state is critical!
 
 ### Verify Before Asking for Help
 
@@ -885,6 +1197,14 @@ After completing this lab, you should be able to:
 - ✅ Use `terraform apply` to create infrastructure
 - ✅ Use `terraform output` to query values
 - ✅ Use `terraform destroy` to clean up resources
+
+**State Management:**
+- ✅ Understand why remote state is critical
+- ✅ Create and configure an S3 bucket for state storage
+- ✅ Configure Terraform backend for S3
+- ✅ Migrate local state to remote S3 backend
+- ✅ Understand state locking with S3 native locking (Terraform 1.9+)
+- ✅ Protect state files with .gitignore
 
 **AWS & Cost Management:**
 - ✅ Create an S3 bucket with versioning and encryption
