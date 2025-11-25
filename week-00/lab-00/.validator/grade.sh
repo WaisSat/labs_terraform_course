@@ -124,7 +124,7 @@ else
 fi
 
 # Check 5: Terraform version requirement (5 points)
-if grep -qE 'required_version.*[">]=.*1\.[9]' *.tf 2>/dev/null; then
+if grep -qE 'required_version.*[">]=.*(1\.(9|[1-9][0-9])|[2-9]\.)' *.tf 2>/dev/null; then
     CODE_QUALITY=$((CODE_QUALITY + 5))
     add_check "code_quality" "Terraform Version" 5 5 "pass" "Version >= 1.9.0 required"
     echo "  ✅ Terraform version requirement: PASS" >&2
